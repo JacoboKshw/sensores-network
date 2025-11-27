@@ -5,16 +5,12 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from pathlib import Path
 from datetime import datetime
-import asyncio
 import json
-import threading
-import websockets
 import os
 
 # -----------------------
 # CONFIGURACIÓN
 # -----------------------
-WS_PORT = int(os.environ.get("WS_PORT", 9001))
 PORT = int(os.environ.get("PORT", 5000))
 
 # DATABASE: Detectar si estamos en producción (Render) o desarrollo (local)
@@ -107,7 +103,7 @@ def init_db():
 # -----------------------
 def handle_new_reading(data):
     """Procesa una nueva lectura de sensor y la guarda en la BD"""
-    node_name = data.get("nodeID")
+    node_name = str(data.get("nodeID"))
     if not node_name:
         raise ValueError("Missing 'nodeID' in reading data.")
 
@@ -161,10 +157,10 @@ def handle_new_reading(data):
             """, (
                 node_id,
                 datetime.now(),
-                data.get("humedad_suelo"),
-                data.get("temperatura"),
-                data.get("humedad_ambiente"),
-                data.get("radiacion_solar")
+                data.get("soil_moisture", 0.0),
+                data.get("temperature", 0.0),
+                data.get("humidity", 0.0),
+                data.get("lux", 0.0)
             ))
         else:
             cur.execute("""
@@ -173,10 +169,10 @@ def handle_new_reading(data):
             """, (
                 node_id,
                 datetime.now().isoformat(),
-                data.get("humedad_suelo"),
-                data.get("temperatura"),
-                data.get("humedad_ambiente"),
-                data.get("radiacion_solar")
+                data.get("soil_moisture", 0.0),
+                data.get("temperature", 0.0),
+                data.get("humidity", 0.0),
+                data.get("lux", 0.0)
             ))
 
         conn.commit()
@@ -238,6 +234,29 @@ def get_data():
         return jsonify(data)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# -----------------------
+# 🆕 ENDPOINT PARA ESP32 (Reemplaza WebSocket)
+# -----------------------
+@app.route('/api/sensor-data', methods=['POST'])
+def receive_sensor_data():
+    """Endpoint HTTP POST para recibir datos del ESP32"""
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({"ok": False, "error": "No JSON data received"}), 400
+        
+        print(f"📥 Datos recibidos del ESP32: {data}")
+        
+        # Procesar y guardar los datos
+        handle_new_reading(data)
+        
+        return jsonify({"ok": True, "message": "Data saved successfully"}), 200
+        
+    except Exception as e:
+        print(f"❌ Error procesando datos del ESP32: {e}")
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -346,71 +365,6 @@ def fetch_latest_data():
     }
 
 # -----------------------
-# WebSocket Server (Para ESP32)
-# -----------------------
-WS_CLIENTS = set()
-
-async def ws_handler(websocket):
-    """Maneja conexiones WebSocket desde ESP32"""
-    WS_CLIENTS.add(websocket)
-    client_ip = websocket.remote_address[0]
-    print(f"🔌 WS cliente conectado: {client_ip}")
-    
-    try:
-        async for message in websocket:
-            print(f"📥 WS Recibido de ESP32: {message}")
-            
-            try:
-                data = json.loads(message)
-            except json.JSONDecodeError:
-                print("⚠️ WS: mensaje no es JSON válido")
-                try: 
-                    await websocket.send(json.dumps({"ok": False, "error": "Invalid JSON"}))
-                except: 
-                    pass
-                continue
-
-            if isinstance(data, dict):
-                # Corregir si el ESP32 envía 'lon' en lugar de 'lng'
-                if "lon" in data and "lng" not in data:
-                    data["lng"] = data["lon"]
-            else:
-                print("⚠️ WS: mensaje no es un objeto JSON")
-                continue
-
-            try:
-                handle_new_reading(data)
-                await websocket.send(json.dumps({"ok": True}))
-            except Exception as e:
-                print(f"❌ Error procesando lectura: {e}")
-                try:
-                    await websocket.send(json.dumps({"ok": False, "error": str(e)}))
-                except: 
-                    pass
-                    
-    except websockets.ConnectionClosed:
-        print(f"🔌 WS cliente desconectado: {client_ip}")
-    except Exception as e:
-        print(f"❌ WS handler error: {e}")
-    finally:
-        WS_CLIENTS.discard(websocket)
-
-def start_ws_server_loop():
-    """Inicia el servidor WebSocket en un hilo separado"""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
-    async def runner():
-        async with websockets.serve(ws_handler, "0.0.0.0", WS_PORT):
-            print(f"🌐 WebSocket server escuchando en ws://0.0.0.0:{WS_PORT}")
-            await asyncio.Future()  # Ejecutar para siempre
-
-    try:
-        loop.run_until_complete(runner())
-    except Exception as e:
-        print(f"❌ Error en WebSocket server: {e}")
-
-# -----------------------
 # MAIN
 # -----------------------
 if __name__ == "__main__":
@@ -425,13 +379,9 @@ if __name__ == "__main__":
         print(f"❌ Error inicializando BD: {e}")
         exit(1)
 
-    # Iniciar servidor WebSocket en hilo separado
-    ws_thread = threading.Thread(target=start_ws_server_loop, daemon=True)
-    ws_thread.start()
-
     # Iniciar Flask + Socket.IO
     print(f"🌐 Iniciando Flask-SocketIO en puerto {PORT}...")
-    print(f"📊 Base de datos: {'PostgreSQL (Supabase)' if USE_POSTGRES else 'SQLite (local)'}")
+    print(f"📊 Base de datos: {'PostgreSQL (Render)' if USE_POSTGRES else 'SQLite (local)'}")
     print("=" * 60)
     
     socketio.run(app, debug=False, port=PORT, host='0.0.0.0')
