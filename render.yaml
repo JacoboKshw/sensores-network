@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: sensor-network-app
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --worker-class eventlet -w 1 --bind 0.0.0.0:$PORT app:app
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: SECRET_KEY
+        generateValue: true
+      - key: WS_PORT
+        value: 9001
+      - key: DATABASE_URL
+        sync: false
