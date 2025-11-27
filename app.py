@@ -14,7 +14,7 @@ import os
 PORT = int(os.environ.get("PORT", 5000))
 
 # DATABASE: Detectar si estamos en producción (Render) o desarrollo (local)
-DATABASE_URL = os.environ.get("DATABASE_URL")  # Supabase o Render lo proporcionan
+DATABASE_URL = os.environ.get("DATABASE_URL")
 USE_POSTGRES = DATABASE_URL is not None
 
 if USE_POSTGRES:
@@ -27,6 +27,19 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="gevent")
+
+# -----------------------
+# 🆕 HELPER: Serializar datetime
+# -----------------------
+def serialize_datetime(obj):
+    """Convierte objetos datetime a strings ISO format recursivamente"""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    elif isinstance(obj, dict):
+        return {key: serialize_datetime(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [serialize_datetime(item) for item in obj]
+    return obj
 
 # -----------------------
 # DB helpers - VERSIÓN DUAL (SQLite + PostgreSQL)
@@ -47,7 +60,6 @@ def init_db():
     cur = conn.cursor()
     
     if USE_POSTGRES:
-        # Sintaxis para PostgreSQL
         cur.execute("""
             CREATE TABLE IF NOT EXISTS nodes (
                 id SERIAL PRIMARY KEY,
@@ -70,7 +82,6 @@ def init_db():
             );
         """)
     else:
-        # Sintaxis para SQLite
         cur.execute("""
             CREATE TABLE IF NOT EXISTS nodes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -111,7 +122,6 @@ def save_single_node_reading(data):
     cur = conn.cursor()
 
     try:
-        # 1. Asegurar que el nodo exista (o crearlo)
         if USE_POSTGRES:
             cur.execute("SELECT id FROM nodes WHERE node_name = %s", (node_name,))
         else:
@@ -149,7 +159,6 @@ def save_single_node_reading(data):
                     WHERE id = ?
                 """, (datetime.now().isoformat(), data.get("lat", 0.0), data.get("lng", 0.0), node_id))
 
-        # 2. Guardar la lectura
         if USE_POSTGRES:
             cur.execute("""
                 INSERT INTO readings (node_id, timestamp, soil_moisture, temperature, humidity, lux)
@@ -190,20 +199,7 @@ def save_single_node_reading(data):
 # Procesar datos consolidados de múltiples nodos
 # -----------------------
 def handle_consolidated_data(data):
-    """
-    Procesa datos consolidados del root node.
-    Formato esperado:
-    {
-        "nodes": [
-            {"nodeID": 123, "temperature": 21.5, ...},
-            {"nodeID": 456, "humidity": 60.0, ...}
-        ],
-        "timestamp": 123456,
-        "totalNodes": 2,
-        "activeNodes": 2,
-        "rootNodeID": 789
-    }
-    """
+    """Procesa datos consolidados del root node"""
     nodes = data.get("nodes", [])
     
     if not nodes:
@@ -229,16 +225,16 @@ def handle_consolidated_data(data):
     
     if errors:
         print(f"⚠️ Errores: {len(errors)}")
-        for error in errors:
-            print(f"   - {error}")
     
-    # Emitir actualización a Socket.IO para el front-end
+    # Emitir actualización a Socket.IO
     try:
         update_data = fetch_latest_data()
         socketio.emit('new_reading', update_data)
         print("📡 Datos emitidos a clientes Socket.IO")
     except Exception as e:
         print(f"⚠️ Error emitiendo datos a Socket.IO: {e}")
+        import traceback
+        traceback.print_exc()
     
     return saved_count
 
@@ -247,12 +243,10 @@ def handle_consolidated_data(data):
 # -----------------------
 @app.route('/')
 def index():
-    """Renderiza el dashboard principal"""
     return render_template('index.html')
 
 @app.route('/api/latest', methods=['GET'])
 def get_latest():
-    """Endpoint para obtener la última lectura de cada nodo"""
     try:
         data = fetch_latest_data()
         return jsonify(data.get('all_latest', []))
@@ -261,7 +255,6 @@ def get_latest():
 
 @app.route('/api/history', methods=['GET'])
 def get_history():
-    """Endpoint para obtener históricos"""
     try:
         node_id = request.args.get('node_id')
         data = fetch_history_data(node_id)
@@ -271,7 +264,6 @@ def get_history():
 
 @app.route('/api/nodes', methods=['GET'])
 def get_nodes():
-    """Endpoint para obtener información de todos los nodos"""
     try:
         data = fetch_latest_data()
         return jsonify(data.get('nodes', []))
@@ -280,7 +272,6 @@ def get_nodes():
 
 @app.route('/api/data', methods=['GET'])
 def get_data():
-    """Endpoint completo con todos los datos de todos los nodos"""
     try:
         data = fetch_latest_data()
         return jsonify(data)
@@ -288,46 +279,34 @@ def get_data():
         return jsonify({"error": str(e)}), 500
 
 # -----------------------
-# 🆕 ENDPOINT PRINCIPAL PARA ESP32 (Datos Consolidados)
+# ENDPOINT PRINCIPAL PARA ESP32
 # -----------------------
 @app.route('/api/sensor-data', methods=['POST'])
 def receive_sensor_data():
-    """
-    Endpoint HTTP POST para recibir datos del ESP32 Root Node
-    Soporta AMBOS formatos:
-    1. Datos consolidados: {"nodes": [...], "timestamp": ..., ...}
-    2. Datos individuales: {"nodeID": 123, "temperature": 21.5, ...}
-    """
     try:
         data = request.get_json()
         
         if not data:
             return jsonify({"ok": False, "error": "No JSON data received"}), 400
         
-        # Detectar formato de datos
         if "nodes" in data:
-            # ✅ FORMATO CONSOLIDADO (múltiples nodos)
             print(f"📦 Datos CONSOLIDADOS recibidos del ESP32")
             print(f"   Total nodos: {data.get('totalNodes', 0)}")
             print(f"   Activos: {data.get('activeNodes', 0)}")
-            print(f"   Root NodeID: {data.get('rootNodeID', 'N/A')}")
             
             saved_count = handle_consolidated_data(data)
             
             return jsonify({
                 "ok": True, 
-                "message": f"Consolidated data saved successfully",
+                "message": "Consolidated data saved successfully",
                 "nodes_processed": len(data.get('nodes', [])),
                 "nodes_saved": saved_count
             }), 200
             
         else:
-            # ✅ FORMATO INDIVIDUAL (un solo nodo) - Retrocompatibilidad
             print(f"📥 Datos INDIVIDUALES recibidos del ESP32: {data.get('nodeID', 'unknown')}")
             
             save_single_node_reading(data)
-            
-            # Emitir actualización
             update_data = fetch_latest_data()
             socketio.emit('new_reading', update_data)
             
@@ -344,17 +323,15 @@ def receive_sensor_data():
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    """Health check para Render y monitoreo"""
     return jsonify({
         "status": "healthy", 
         "timestamp": datetime.now().isoformat(),
         "database": "PostgreSQL" if USE_POSTGRES else "SQLite",
-        "port": PORT,
-        "features": ["consolidated_data", "multi_node_support"]
+        "port": PORT
     })
 
 # -----------------------
-# Socket.IO (Front-end live updates)
+# Socket.IO
 # -----------------------
 @socketio.on('connect')
 def handle_connect():
@@ -370,7 +347,7 @@ def handle_disconnect():
     print('⚠️ Cliente desconectado de Socket.IO')
 
 # -----------------------
-# Data Fetchers (para front-end)
+# Data Fetchers
 # -----------------------
 def fetch_latest_data():
     """Obtiene los datos más recientes de TODOS los nodos"""
@@ -378,7 +355,6 @@ def fetch_latest_data():
     cur = conn.cursor()
 
     try:
-        # Obtener última lectura de cada nodo
         cur.execute("""
             SELECT 
                 r.*, 
@@ -395,11 +371,9 @@ def fetch_latest_data():
         """)
         all_latest_readings = [dict(row) for row in cur.fetchall()]
 
-        # Obtener info de todos los nodos
         cur.execute("SELECT node_name, lat, lng, online, last_seen FROM nodes;")
         all_nodes = [dict(row) for row in cur.fetchall()]
         
-        # Para retrocompatibilidad, mantener "latest" con el nodo más reciente
         latest_reading_overall = all_latest_readings[0] if all_latest_readings else {
             "timestamp": None,
             "soil_moisture": None,
@@ -411,16 +385,19 @@ def fetch_latest_data():
     finally:
         conn.close()
 
-    return {
-        "latest": latest_reading_overall,  # El más reciente (retrocompatibilidad)
-        "all_latest": all_latest_readings,  # TODAS las últimas lecturas de cada nodo
+    result = {
+        "latest": latest_reading_overall,
+        "all_latest": all_latest_readings,
         "nodes": all_nodes,
         "total_nodes": len(all_nodes),
         "active_nodes": sum(1 for n in all_nodes if n.get('online', 0) == 1)
     }
+    
+    # 🆕 SERIALIZAR DATETIME
+    return serialize_datetime(result)
 
 def fetch_history_data(node_id=None):
-    """Obtiene histórico de un nodo específico o del más reciente"""
+    """Obtiene histórico de un nodo específico"""
     conn = get_db()
     cur = conn.cursor()
 
@@ -430,11 +407,7 @@ def fetch_history_data(node_id=None):
         if node_id:
             target_node_id = int(node_id)
         else:
-            # Si no se especifica, usar el nodo más reciente
-            cur.execute("""
-                SELECT node_id FROM readings 
-                ORDER BY timestamp DESC LIMIT 1
-            """)
+            cur.execute("SELECT node_id FROM readings ORDER BY timestamp DESC LIMIT 1")
             result = cur.fetchone()
             if not result:
                 return history_data
@@ -458,15 +431,20 @@ def fetch_history_data(node_id=None):
             """, (target_node_id,))
         
         history = cur.fetchall()
-        history = list(reversed(history))  # Invertir para orden cronológico
+        history = list(reversed(history))
 
         for row in history:
             if USE_POSTGRES:
                 dt_obj = row['timestamp']
+                if isinstance(dt_obj, datetime):
+                    history_data["labels"].append(dt_obj.strftime("%H:%M:%S"))
+                else:
+                    dt_obj = datetime.fromisoformat(str(dt_obj))
+                    history_data["labels"].append(dt_obj.strftime("%H:%M:%S"))
             else:
                 dt_obj = datetime.fromisoformat(row['timestamp'])
+                history_data["labels"].append(dt_obj.strftime("%H:%M:%S"))
                 
-            history_data["labels"].append(dt_obj.strftime("%H:%M:%S"))
             history_data["temperature"].append(row['temperature'])
             history_data["humidity"].append(row['humidity'])
             history_data["soil_moisture"].append(row['soil_moisture'])
@@ -483,22 +461,16 @@ def fetch_history_data(node_id=None):
 if __name__ == "__main__":
     print("=" * 60)
     print("🚀 Iniciando Red de Sensores Ad Hoc - Backend")
-    print("   📦 SOPORTE PARA DATOS CONSOLIDADOS ACTIVADO")
     print("=" * 60)
     
-    # Inicializar base de datos
     try:
         init_db()
     except Exception as e:
         print(f"❌ Error inicializando BD: {e}")
         exit(1)
 
-    # Iniciar Flask + Socket.IO
     print(f"🌐 Iniciando Flask-SocketIO en puerto {PORT}...")
-    print(f"📊 Base de datos: {'PostgreSQL (Render)' if USE_POSTGRES else 'SQLite (local)'}")
-    print(f"✅ Formatos soportados:")
-    print(f"   • Datos consolidados (múltiples nodos)")
-    print(f"   • Datos individuales (retrocompatibilidad)")
+    print(f"📊 Base de datos: {'PostgreSQL' if USE_POSTGRES else 'SQLite'}")
     print("=" * 60)
     
     socketio.run(app, debug=False, port=PORT, host='0.0.0.0')
