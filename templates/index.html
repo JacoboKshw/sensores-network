@@ -1274,46 +1274,82 @@ socket.on('reconnect', function(attemptNumber) {
 
     // El servidor Python debe emitir los datos usando el evento 'new_reading'
     socket.on('new_reading', function(data) {
-        console.log("📡 Nueva lectura recibida (SocketIO):", data);
+    console.log("📡 Nueva lectura recibida (SocketIO):", data);
 
-        // Actualizar panel principal
-        if (data.latest) {
-            updateLatestUI(data.latest);
-        }
-
-        // Actualizar gráficas
-        if (data.history) {
-            updateCharts({
-                labels: data.history.labels,
-                temperature: data.history.temperature,
-                humidity: data.history.humidity,
-                soil_moisture: data.history.soil_moisture
+    // Procesar todos los nodos recibidos
+    if (data.all_latest && Array.isArray(data.all_latest)) {
+        console.log(`Procesando ${data.all_latest.length} nodos`);
+        
+        // Actualizar el panel principal con el primer nodo (o puedes elegir otro criterio)
+        if (data.all_latest.length > 0) {
+            const primaryNode = data.all_latest[0]; // Primer nodo como referencia
+            updateLatestUI({
+                timestamp: primaryNode.timestamp,
+                soil_moisture: primaryNode.soil_moisture,
+                temperature: primaryNode.temperature,
+                humidity: primaryNode.humidity,
+                lux: primaryNode.lux
             });
         }
 
-        // Actualizar nodos
-        if (data.nodes) {
-            updateNodes(data.nodes);
-        }
+        // Actualizar información de todos los nodos en la tabla
+        const nodesForTable = data.all_latest.map(node => ({
+            id: node.node_name,
+            lat: node.lat,
+            lng: node.lng,
+            last_seen: node.timestamp,
+            online: true, // Considera online si está en all_latest
+            temperature: node.temperature,
+            humidity: node.humidity,
+            soil_moisture: node.soil_moisture,
+            lux: node.lux
+        }));
+        
+        updateNodes(nodesForTable);
+    }
 
-        // Actualizar alertas
-        if (data.latest && data.nodes) {
-            generateAlerts(data.latest, data.nodes);
-        }
+    // Actualizar gráficas históricas
+    if (data.history) {
+        updateCharts({
+            labels: data.history.labels,
+            temperature: data.history.temperature,
+            humidity: data.history.humidity,
+            soil_moisture: data.history.soil_moisture
+        });
+    }
 
-        // Actualizar indicador de última actualización
-        const lastUpdateEl = document.getElementById("last-update");
-        if (data.latest && data.latest.timestamp) {
-            const d = new Date(data.latest.timestamp);
-            lastUpdateEl.textContent =
-                "Última actualización: " +
-                d.toLocaleString("es-CO", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    second: "2-digit"
-                });
-        }
-    });
+    // Actualizar contadores de nodos
+    if (data.total_nodes !== undefined) {
+        document.getElementById("nodes-total").textContent = data.total_nodes;
+    }
+    if (data.active_nodes !== undefined) {
+        document.getElementById("nodes-online").textContent = data.active_nodes;
+    }
+
+    // Generar alertas basadas en todos los nodos
+    if (data.all_latest && data.all_latest.length > 0) {
+        const nodesForAlerts = data.all_latest.map(n => ({
+            id: n.node_name,
+            online: true,
+            lat: n.lat,
+            lng: n.lng
+        }));
+        generateAlerts(data.all_latest[0], nodesForAlerts);
+    }
+
+    // Actualizar indicador de última actualización
+    const lastUpdateEl = document.getElementById("last-update");
+    if (data.all_latest && data.all_latest.length > 0 && data.all_latest[0].timestamp) {
+        const d = new Date(data.all_latest[0].timestamp);
+        lastUpdateEl.textContent =
+            "Última actualización: " +
+            d.toLocaleString("es-CO", {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit"
+            });
+    }
+});
 
     socket.on('error', function(err) {
         console.error("SocketIO error:", err);
