@@ -6,3 +6,5 @@ gunicorn==21.2.0
 python-engineio==4.8.0
 psycopg2-binary==2.9.9
 setuptools>=65.5.0
+gevent>=23.9.1
+gevent-websocket>=0.10.1
