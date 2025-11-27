@@ -1,0 +1,1333 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Red de Sensores Ad Hoc - Panel de Monitoreo Agrícola</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.js"></script>
+  <style>
+    /* ... (CSS sin cambios) ... */
+    :root {
+      --bg-main: #020617;
+      --bg-card: #0b1120;
+      --bg-card-soft: #020617;
+      --accent: #22c55e;
+      --accent-soft: rgba(34, 197, 94, 0.15);
+      --accent-warning: #f97316;
+      --accent-danger: #ef4444;
+      --text-main: #e5e7eb;
+      --text-soft: #9ca3af;
+      --border-soft: #1f2937;
+      --shadow-soft: 0 18px 45px rgba(0,0,0,0.45);
+      --radius-xl: 18px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, #0f172a 0, #020617 55%, #000 100%);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      border-bottom: 1px solid #111827;
+      backdrop-filter: blur(18px);
+      background: linear-gradient(to right, rgba(15,23,42,0.98), rgba(5,46,22,0.98));
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .header-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 14px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-block {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-mark {
+      width: 40px;
+      height: 40px;
+      border-radius: 999px;
+      background: radial-gradient(circle at 30% 20%, #4ade80, #22c55e 40%, #14532d 80%);
+      position: relative;
+      box-shadow: 0 0 18px rgba(34,197,94,0.55);
+      overflow: hidden;
+    }
+
+    .logo-mark::before,
+    .logo-mark::after {
+      content: "";
+      position: absolute;
+      border-radius: 999px;
+      border: 2px solid rgba(15,23,42,0.55);
+    }
+
+    .logo-mark::before {
+      inset: 4px;
+    }
+
+    .logo-mark::after {
+      inset: 10px;
+      border-style: dashed;
+      opacity: 0.8;
+    }
+
+    .logo-text-title {
+      font-size: 1.2rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .logo-text-sub {
+      font-size: 0.8rem;
+      color: var(--text-soft);
+    }
+
+    .header-tag {
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(15,23,42,0.85);
+      border: 1px solid rgba(55,65,81,0.6);
+      font-size: 0.75rem;
+      color: var(--text-soft);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .header-tag span.dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #22c55e;
+      box-shadow: 0 0 8px rgba(34,197,94,0.9);
+    }
+
+    main {
+      flex: 1;
+    }
+
+    .page {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 22px 16px 32px;
+    }
+
+    .page-header {
+      display: grid;
+      grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+      gap: 18px;
+      margin-bottom: 22px;
+    }
+
+    @media (max-width: 900px) {
+      .page-header {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    .page-title-block h1 {
+      font-size: 1.8rem;
+      margin: 0 0 8px;
+    }
+
+    .page-title-block p {
+      margin: 0;
+      font-size: 0.95rem;
+      color: var(--text-soft);
+      max-width: 520px;
+    }
+
+    .page-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+      align-items: flex-start;
+    }
+
+    .meta-pill {
+      padding: 6px 11px;
+      border-radius: 999px;
+      border: 1px solid rgba(55,65,81,0.8);
+      background: rgba(15,23,42,0.9);
+      font-size: 0.8rem;
+      color: var(--text-soft);
+      display: flex;
+      flex-direction: column;
+      min-width: 150px;
+    }
+
+    .meta-pill span.label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #6b7280;
+    }
+
+    .meta-pill span.value {
+      font-size: 0.85rem;
+    }
+
+    .grid {
+      display: grid;
+      gap: 18px;
+    }
+
+    .grid-3 {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .grid-2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    @media (max-width: 980px) {
+      .grid-3 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 720px) {
+      .grid-3,
+      .grid-2 {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    .card {
+      background: radial-gradient(circle at top left, rgba(34,197,94,0.05), rgba(15,23,42,0.95));
+      border-radius: var(--radius-xl);
+      border: 1px solid var(--border-soft);
+      box-shadow: var(--shadow-soft);
+      padding: 14px 16px 16px;
+    }
+
+    .card-soft {
+      background: rgba(15,23,42,0.9);
+      border-radius: var(--radius-xl);
+      border: 1px solid rgba(31,41,55,0.9);
+      box-shadow: 0 14px 40px rgba(0,0,0,0.55);
+      padding: 14px 16px 16px;
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 6px;
+    }
+
+    .card-title {
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #6b7280;
+    }
+
+    .card-extra {
+      font-size: 0.75rem;
+      color: #6b7280;
+    }
+
+    .metric-main {
+      font-size: 1.6rem;
+      font-weight: 600;
+      margin: 4px 0 0;
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+    }
+
+    .metric-unit {
+      font-size: 0.8rem;
+      color: var(--text-soft);
+    }
+
+    .metric-sub {
+      font-size: 0.78rem;
+      color: var(--text-soft);
+      margin-top: 6px;
+    }
+
+    .metric-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      background: var(--accent-soft);
+      color: var(--accent);
+      border: 1px solid rgba(34,197,94,0.4);
+    }
+
+    .metric-badge.warning {
+      background: rgba(249,115,22,0.15);
+      color: var(--accent-warning);
+      border-color: rgba(249,115,22,0.4);
+    }
+
+    .metric-badge.danger {
+      background: rgba(239,68,68,0.15);
+      color: var(--accent-danger);
+      border-color: rgba(239,68,68,0.4);
+    }
+
+    .section-title {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin: 0 0 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .section-subtitle {
+      font-size: 0.8rem;
+      color: var(--text-soft);
+      margin: 0 0 10px;
+    }
+
+    canvas {
+      width: 100% !important;
+      max-height: 260px;
+    }
+
+    .map-container {
+      position: relative;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid rgba(31,41,55,0.9);
+      background: #020617;
+      min-height: 260px;
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+      min-height: 260px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+    }
+
+    th, td {
+      padding: 6px 8px;
+      border-bottom: 1px solid rgba(31,41,55,0.9);
+      text-align: left;
+    }
+
+    th {
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.72rem;
+      color: #6b7280;
+    }
+
+    tr:hover td {
+      background: rgba(15,23,42,0.85);
+    }
+
+    .tag-node {
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(55,65,81,0.8);
+      font-size: 0.7rem;
+      background: rgba(15,23,42,0.9);
+    }
+
+    .status-dot {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      margin-right: 4px;
+      background: #22c55e;
+    }
+
+    .status-off {
+      background: #6b7280;
+    }
+
+    .alert-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      font-size: 0.8rem;
+    }
+
+    .alert-item {
+      padding: 6px 0;
+      border-bottom: 1px dashed rgba(31,41,55,0.8);
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 10px;
+    }
+
+    .alert-item:last-child {
+      border-bottom: none;
+    }
+
+    .alert-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 500;
+    }
+
+    .alert-pill {
+      padding: 2px 7px;
+      border-radius: 999px;
+      border: 1px solid rgba(55,65,81,0.8);
+      font-size: 0.7rem;
+      color: var(--text-soft);
+    }
+
+    footer {
+      border-top: 1px solid #111827;
+      padding: 10px 16px 14px;
+      font-size: 0.75rem;
+      color: #6b7280;
+      text-align: center;
+      background: #020617;
+    }
+
+    .ml-auto {
+      margin-left: auto;
+    }
+
+    .badge-small {
+      border-radius: 999px;
+      border: 1px solid rgba(55,65,81,0.8);
+      padding: 2px 8px;
+      font-size: 0.7rem;
+      color: var(--text-soft);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div class="logo-block">
+        <div class="logo-mark"></div>
+        <div>
+          <div class="logo-text-title">Red de Sensores Ad Hoc</div>
+          <div class="logo-text-sub">Monitoreo de variables agrícolas en tiempo real</div>
+        </div>
+      </div>
+      <div class="header-tag">
+        <span class="dot"></span>
+        <span>Gateway conectado · ESP-MESH / Flask / SQLite</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="page">
+      <section class="page-header">
+        <div class="page-title-block">
+          <h1>Dashboard de Monitoreo Agrícola</h1>
+          <p>
+            Visualización en tiempo real de humedad del suelo, temperatura ambiental,
+            humedad relativa y radiación solar a partir de nodos ESP32 desplegados en campo.
+          </p>
+        </div>
+        <div class="page-meta">
+          <div class="meta-pill">
+            <span class="label">Proyecto</span>
+            <span class="value">Red de Sensores Ad Hoc</span>
+          </div>
+          <div class="meta-pill">
+            <span class="label">Curso</span>
+            <span class="value">Redes de la computación</span>
+          </div>
+          <div class="meta-pill">
+            <span class="label">Backend</span>
+            <span class="value">Flask + SQLite + API REST</span>
+          </div>
+        </div>
+      </section>
+
+      <section style="margin-bottom: 22px;">
+        <div class="section-title">
+          <span>Panel de monitoreo en tiempo real</span>
+          <span class="badge-small" id="last-update">Última actualización: —</span>
+        </div>
+        <p class="section-subtitle">
+          Valores actuales reportados por el nodo gateway a través de la red ESP-MESH.
+        </p>
+
+        <div class="grid grid-3">
+          <article class="card">
+            <div class="card-header">
+              <span class="card-title">Humedad del suelo</span>
+              <span class="card-extra">Sensor capacitivo</span>
+            </div>
+            <div class="metric-main">
+              <span id="soil-moisture-value">—</span>
+              <span class="metric-unit">%</span>
+            </div>
+            <div class="metric-sub">
+              <span id="soil-moisture-badge" class="metric-badge">Esperando datos…</span>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-header">
+              <span class="card-title">Temperatura ambiental</span>
+              <span class="card-extra">DHT22</span>
+            </div>
+            <div class="metric-main">
+              <span id="temp-value">—</span>
+              <span class="metric-unit">°C</span>
+            </div>
+            <div class="metric-sub">
+              <span id="temp-badge" class="metric-badge">Esperando datos…</span>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-header">
+              <span class="card-title">Humedad relativa</span>
+              <span class="card-extra">DHT22</span>
+            </div>
+            <div class="metric-main">
+              <span id="hum-value">—</span>
+              <span class="metric-unit">% HR</span>
+            </div>
+            <div class="metric-sub">
+              <span id="hum-badge" class="metric-badge">Esperando datos…</span>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section style="margin-bottom: 22px;">
+        <div class="grid grid-2">
+          <article class="card-soft">
+            <div class="section-title">
+              <span>Gráficas históricas</span>
+            </div>
+            <p class="section-subtitle">
+              Evolución temporal de temperatura, humedad relativa y humedad del suelo.
+            </p>
+            <div style="margin-bottom: 16px;">
+              <canvas id="chart-temp-hum"></canvas>
+            </div>
+            <div>
+              <canvas id="chart-soil"></canvas>
+            </div>
+          </article>
+
+          <article class="card-soft">
+            <div class="section-title">
+              <span>Radiación solar y mapa de nodos</span>
+            </div>
+            <p class="section-subtitle">
+              Intensidad luminosa (BH1750) y distribución espacial de los nodos en el cultivo.
+            </p>
+
+            <div class="grid grid-2" style="margin-bottom: 14px;">
+              <div class="card" style="padding: 10px 12px;">
+                <div class="card-header">
+                  <span class="card-title">Radiación solar</span>
+                  <span class="card-extra">BH1750</span>
+                </div>
+                <div class="metric-main" style="font-size: 1.4rem;">
+                  <span id="lux-value">—</span>
+                  <span class="metric-unit">lux</span>
+                </div>
+                <div class="metric-sub">
+                  <span id="lux-badge" class="metric-badge">Esperando datos…</span>
+                </div>
+              </div>
+
+              <div class="card" style="padding: 10px 12px;">
+                <div class="card-header">
+                  <span class="card-title">Estado de nodos</span>
+                </div>
+                <div class="metric-sub">
+                  <div><span id="nodes-total">0</span> nodos registrados</div>
+                  <div><span id="nodes-online">0</span> en línea</div>
+                  <div><span id="nodes-offline">0</span> fuera de línea</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="map-container">
+              <div id="map"></div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <div class="grid grid-2">
+          <article class="card-soft">
+            <div class="section-title">
+              <span>Nodos del cultivo</span>
+            </div>
+            <p class="section-subtitle">
+              Identificación, ubicación y último reporte registrado por cada nodo sensor.
+            </p>
+            <div style="overflow-x: auto;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Nodo</th>
+                    <th>Lat</th>
+                    <th>Lng</th>
+                    <th>Último reporte</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody id="nodes-table-body">
+                  </tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="card-soft">
+            <div class="section-title">
+              <span>Alertas y umbrales</span>
+            </div>
+            <p class="section-subtitle">
+              Condiciones críticas generadas a partir de los valores actuales y configuraciones de umbral.
+            </p>
+            <ul class="alert-list" id="alert-list">
+              </ul>
+          </article>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    Sensor → ESP32 (ESP-MESH) → WiFi → Flask + SQLite → Dashboard Web
+  </footer>
+
+  <script>
+    // ==========================
+    // CONFIGURACIÓN GENERAL
+    // ==========================
+
+    // Ahora mismo está configurado para usar la API de Flask
+    const USE_MOCK_DATA = false;
+
+    // Endpoints esperados en Flask:
+    // GET  /api/latest   -> última lectura de cada variable
+    // GET  /api/history  -> históricos para gráficas
+    // GET  /api/nodes    -> información y estado de nodos
+
+    // ==========================
+    // ESTADO GLOBAL
+    // ==========================
+    let chartTempHum = null;
+    let chartSoil = null;
+    let nodesData = [];
+
+    let map;
+    let markers = [];
+
+    // ==========================
+    // INICIALIZACIÓN DE CHARTS
+    // ==========================
+    function initCharts() {
+      const tempHumCtx = document.getElementById("chart-temp-hum");
+      const soilCtx = document.getElementById("chart-soil");
+
+      chartTempHum = new Chart(tempHumCtx, {
+        type: "line",
+        data: {
+          labels: [],
+          datasets: [
+            {
+              label: "Temperatura (°C)",
+              data: [],
+              tension: 0.35
+            },
+            {
+              label: "Humedad relativa (%HR)",
+              data: [],
+              tension: 0.35
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            mode: "index",
+            intersect: false
+          },
+          plugins: {
+            legend: {
+              labels: {
+                color: "#9ca3af",
+                font: { size: 11 }
+              }
+            }
+          },
+          scales: {
+            x: {
+              ticks: {
+                color: "#6b7280",
+                maxRotation: 0,
+                autoSkip: true
+              },
+              grid: {
+                color: "rgba(31,41,55,0.5)"
+              }
+            },
+            y: {
+              ticks: { color: "#6b7280" },
+              grid: {
+                color: "rgba(31,41,55,0.5)"
+              }
+            }
+          }
+        }
+      });
+
+      chartSoil = new Chart(soilCtx, {
+        type: "line",
+        data: {
+          labels: [],
+          datasets: [
+            {
+              label: "Humedad del suelo (%)",
+              data: [],
+              tension: 0.35
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            mode: "index",
+            intersect: false
+          },
+          plugins: {
+            legend: {
+              labels: {
+                color: "#9ca3af",
+                font: { size: 11 }
+              }
+            }
+          },
+          scales: {
+            x: {
+              ticks: { color: "#6b7280" },
+              grid: { color: "rgba(31,41,55,0.5)" }
+            },
+            y: {
+              ticks: { color: "#6b7280" },
+              grid: { color: "rgba(31,41,55,0.5)" }
+            }
+          }
+        }
+      });
+    }
+
+    // ==========================
+    // FECTH / DATOS (MÉTODOS TRADICIONALES - MANTENIDOS PARA REFERENCIA)
+    // ==========================
+    async function fetchLatestFromAPI() {
+      const res = await fetch("/api/latest");
+      // Importante: Si la ruta no está definida en Flask, esto dará 404. 
+      // Pero si la tabla de lecturas está vacía, Flask debe devolver una respuesta OK (200) con datos nulos/vacíos, no 404.
+      if (!res.ok) throw new Error("Error al obtener /api/latest");
+      return res.json();
+    }
+
+    async function fetchHistoryFromAPI() {
+      const res = await fetch("/api/history");
+      // Si decidiste no agregar la ruta /api/history, esto fallará. 
+      // Por ahora, lo mantenemos como estaba.
+      if (!res.ok) throw new Error("Error al obtener /api/history");
+      return res.json();
+    }
+
+    async function fetchNodesFromAPI() {
+      const res = await fetch("/api/nodes");
+      if (!res.ok) throw new Error("Error al obtener /api/nodes");
+      return res.json();
+    }
+
+    function mockLatest() {
+      const now = new Date();
+      return {
+        timestamp: now.toISOString(),
+        soil_moisture: 52,
+        temperature: 24.7,
+        humidity: 68,
+        lux: 32400
+      };
+    }
+
+    function mockHistory() {
+      const now = new Date();
+      const labels = [];
+      const tempData = [];
+      const humData = [];
+      const soilData = [];
+
+      for (let i = 10; i >= 0; i--) {
+        const d = new Date(now.getTime() - i * 15 * 60000); // cada 15 min
+        labels.push(d.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" }));
+        tempData.push(22 + Math.random() * 4);
+        humData.push(60 + Math.random() * 15);
+        soilData.push(45 + Math.random() * 15);
+      }
+
+      return {
+        labels,
+        temperature: tempData,
+        humidity: humData,
+        soil_moisture: soilData
+      };
+    }
+
+    function mockNodes() {
+      const now = new Date();
+      return [
+        {
+          id: "Nodo-01",
+          lat: 5.705,
+          lng: -72.941,
+          last_seen: new Date(now.getTime() - 2 * 60000).toISOString(),
+          online: true
+        },
+        {
+          id: "Nodo-02",
+          lat: 5.706,
+          lng: -72.942,
+          last_seen: new Date(now.getTime() - 8 * 60000).toISOString(),
+          online: true
+        },
+        {
+          id: "Nodo-03",
+          lat: 5.704,
+          lng: -72.94,
+          last_seen: new Date(now.getTime() - 50 * 60000).toISOString(),
+          online: false
+        }
+      ];
+    }
+
+    // Esta función se usará una vez al cargar la página para obtener los datos iniciales
+    // El mecanismo de refresco periódico se elimina a favor de WebSockets.
+    async function fetchAllData() {
+      try {
+        let latest, history, nodes;
+
+        if (USE_MOCK_DATA) {
+          latest = mockLatest();
+          history = mockHistory();
+          nodes = mockNodes();
+        } else {
+          // Si no usamos mock data, hacemos las llamadas API
+          [latest, history, nodes] = await Promise.all([
+            fetchLatestFromAPI(),
+            fetchHistoryFromAPI(),
+            fetchNodesFromAPI()
+          ]);
+        }
+
+        updateLatestUI(latest);
+        updateCharts(history);
+        updateNodes(nodes);
+        generateAlerts(latest, nodes);
+
+        const lastUpdateEl = document.getElementById("last-update");
+        if (latest.timestamp) {
+          const d = new Date(latest.timestamp);
+          lastUpdateEl.textContent = "Última actualización: " +
+            d.toLocaleString("es-CO", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+        } else {
+          lastUpdateEl.textContent = "Última actualización: —";
+        }
+
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    // ==========================
+    // ACTUALIZAR PANEL
+    // ==========================
+    function updateBadge(id, value, text, level = "normal") {
+      const el = document.getElementById(id);
+      el.textContent = text;
+      el.classList.remove("warning", "danger");
+
+      if (level === "warning") {
+        el.classList.add("warning");
+      } else if (level === "danger") {
+        el.classList.add("danger");
+      }
+    }
+
+    function updateLatestUI(latest) {
+      if (!latest) return;
+
+      // Humedad del suelo
+      const soil = latest.soil_moisture;
+      document.getElementById("soil-moisture-value").textContent =
+        soil != null ? soil.toFixed(0) : "—";
+
+      if (soil < 35) {
+        updateBadge("soil-moisture-badge", soil, "Suelo seco · Revisar riego", "danger");
+      } else if (soil > 75) {
+        updateBadge("soil-moisture-badge", soil, "Posible exceso de agua", "warning");
+      } else {
+        updateBadge("soil-moisture-badge", soil, "Rango adecuado para el cultivo");
+      }
+
+      // Temperatura
+      const temp = latest.temperature;
+      document.getElementById("temp-value").textContent =
+        temp != null ? temp.toFixed(1) : "—";
+      if (temp < 10) {
+        updateBadge("temp-badge", temp, "Riesgo de helada", "danger");
+      } else if (temp > 32) {
+        updateBadge("temp-badge", temp, "Calor extremo", "warning");
+      } else {
+        updateBadge("temp-badge", temp, "Temperatura óptima");
+      }
+
+      // Humedad relativa
+      const hum = latest.humidity;
+      document.getElementById("hum-value").textContent =
+        hum != null ? hum.toFixed(0) : "—";
+      if (hum > 90) {
+        updateBadge("hum-badge", hum, "Condición ideal para hongos", "warning");
+      } else if (hum < 30) {
+        updateBadge("hum-badge", hum, "Estrés hídrico posible", "warning");
+      } else {
+        updateBadge("hum-badge", hum, "Rango aceptable");
+      }
+
+      // Radiación solar (lux)
+      const lux = latest.lux;
+      document.getElementById("lux-value").textContent =
+        lux != null ? lux.toFixed(0) : "—";
+      if (lux > 80000) {
+        updateBadge("lux-badge", lux, "Radiación muy alta · Usar malla sombra", "warning");
+      } else if (lux < 10000) {
+        updateBadge("lux-badge", lux, "Baja radiación · Revisar nubosidad", "warning");
+      } else {
+        updateBadge("lux-badge", lux, "Radiación adecuada");
+      }
+    }
+
+    // ==========================
+    // ACTUALIZAR CHARTS
+    // ==========================
+    function updateCharts(history) {
+      if (!history || !chartTempHum || !chartSoil) return;
+
+      chartTempHum.data.labels = history.labels || [];
+      chartTempHum.data.datasets[0].data = history.temperature || [];
+      chartTempHum.data.datasets[1].data = history.humidity || [];
+      chartTempHum.update();
+
+      chartSoil.data.labels = history.labels || [];
+      chartSoil.data.datasets[0].data = history.soil_moisture || [];
+      chartSoil.update();
+    }
+
+    // ==========================
+    // NODOS + MAPA
+    // ==========================
+    function updateNodes(nodes) {
+      nodesData = nodes || [];
+
+      // Tabla
+      const tbody = document.getElementById("nodes-table-body");
+      tbody.innerHTML = "";
+
+      nodesData.forEach(node => {
+        const tr = document.createElement("tr");
+
+        const lastSeenDate = node.last_seen ? new Date(node.last_seen) : null;
+        const lastSeenStr = lastSeenDate
+          ? lastSeenDate.toLocaleTimeString("es-CO", {
+              hour: "2-digit",
+              minute: "2-digit"
+            })
+          : "—";
+
+        tr.innerHTML = `
+          <td><span class="tag-node">${node.id || "Nodo"}</span></td>
+          <td>${node.lat != null ? node.lat.toFixed(5) : "—"}</td>
+          <td>${node.lng != null ? node.lng.toFixed(5) : "—"}</td>
+          <td>${lastSeenStr}</td>
+          <td>
+            <span class="${node.online ? "status-dot" : "status-dot status-off"}"></span>
+            <span>${node.online ? "En línea" : "Sin conexión"}</span>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      // Resumen
+      const total = nodesData.length;
+      const online = nodesData.filter(n => n.online).length;
+      const offline = total - online;
+
+      document.getElementById("nodes-total").textContent = total;
+      document.getElementById("nodes-online").textContent = online;
+      document.getElementById("nodes-offline").textContent = offline;
+
+      // Mapa
+      renderMarkers();
+    }
+
+    function initMap() {
+      // Centro aproximado (puedes poner coordenadas del cultivo real)
+      const center = { lat: 5.705, lng: -72.941 };
+
+      map = new google.maps.Map(document.getElementById("map"), {
+        center,
+        zoom: 16,
+        mapTypeId: "satellite",
+        disableDefaultUI: false
+      });
+
+      renderMarkers();
+    }
+
+    function renderMarkers() {
+      if (!map || !nodesData.length) return;
+
+      // Eliminar marcadores anteriores
+      markers.forEach(m => m.setMap(null));
+      markers = [];
+
+      nodesData.forEach(node => {
+        if (node.lat == null || node.lng == null) return;
+
+        const marker = new google.maps.Marker({
+          position: { lat: node.lat, lng: node.lng },
+          map,
+          title: node.id || "Nodo"
+        });
+
+        const info = new google.maps.InfoWindow({
+          content: `
+            <div style="font-size: 0.8rem;">
+              <strong>${node.id || "Nodo"}</strong><br/>
+              Lat: ${node.lat.toFixed(5)}, Lng: ${node.lng.toFixed(5)}<br/>
+              Estado: ${node.online ? "En línea" : "Sin conexión"}
+            </div>
+          `
+        });
+
+        marker.addListener("click", () => {
+          info.open({ anchor: marker, map });
+        });
+
+        markers.push(marker);
+      });
+    }
+
+    // Hacer initMap visible para el script de Google Maps
+    window.initMap = initMap;
+
+    // ==========================
+    // ALERTAS
+    // ==========================
+    function generateAlerts(latest, nodes) {
+      const ul = document.getElementById("alert-list");
+      ul.innerHTML = "";
+
+      const alerts = [];
+
+      if (latest) {
+        if (latest.soil_moisture < 35) {
+          alerts.push({
+            label: "Suelo seco",
+            desc: "La humedad del suelo está por debajo del umbral mínimo. Considerar activar riego.",
+            level: "alta"
+          });
+        }
+        if (latest.soil_moisture > 80) {
+          alerts.push({
+            label: "Encharcamiento",
+            desc: "Posible exceso de agua en el suelo. Revisar drenaje.",
+            level: "media"
+          });
+        }
+        if (latest.temperature < 10) {
+          alerts.push({
+            label: "Riesgo de helada",
+            desc: "La temperatura está en niveles que pueden afectar el cultivo.",
+            level: "alta"
+          });
+        }
+        if (latest.temperature > 32) {
+          alerts.push({
+            label: "Calor extremo",
+            desc: "Temperatura por encima del rango recomendado. Considerar sombreado o riego.",
+            level: "media"
+          });
+        }
+        if (latest.humidity > 90) {
+          alerts.push({
+            label: "Alta humedad relativa",
+            desc: "Condiciones favorables para hongos. Monitorizar aparición de enfermedades.",
+            level: "media"
+          });
+        }
+      }
+
+      const offlineNodes = (nodes || []).filter(n => !n.online);
+      if (offlineNodes.length > 0) {
+        alerts.push({
+          label: "Nodos sin conexión",
+          desc: `${offlineNodes.length} nodo(s) no reportan datos. Verificar alimentación o cobertura ESP-MESH.`,
+          level: "media"
+        });
+      }
+
+      if (alerts.length === 0) {
+        alerts.push({
+          label: "Sin alertas críticas",
+          desc: "Todas las variables se encuentran dentro de los rangos configurados.",
+          level: "baja"
+        });
+      }
+
+      alerts.forEach(alert => {
+        const li = document.createElement("li");
+        li.className = "alert-item";
+
+        const levelText =
+          alert.level === "alta" ? "Alta" : alert.level === "media" ? "Media" : "Baja";
+
+        li.innerHTML = `
+          <div class="alert-label">
+            <span>${
+              alert.level === "alta"
+                ? "⚠"
+                : alert.level === "media"
+                ? "⚡"
+                : "✓"
+            }</span>
+            <span>${alert.label}</span>
+          </div>
+          <div class="ml-auto alert-pill">Severidad: ${levelText}</div>
+        `;
+        const desc = document.createElement("div");
+        desc.style.marginLeft = "20px";
+        desc.style.marginTop = "2px";
+        desc.style.color = "#9ca3af";
+        desc.textContent = alert.desc;
+
+        li.appendChild(desc);
+        ul.appendChild(li);
+      });
+    }
+
+    // ==========================
+    // ARRANQUE
+    // ==========================
+    document.addEventListener("DOMContentLoaded", () => {
+      initCharts();
+      // fetchAllData() se usa para cargar los datos iniciales al cargar la página.
+      fetchAllData();
+    });
+
+    // ==========================
+    // CONEXIÓN SOCKET.IO (REEMPLAZA A WEBSOCKET PURO)
+    // ==========================
+    
+    // Conexión al servidor Flask/SocketIO en el puerto 5000
+    // window.location.hostname toma la IP/nombre de dominio actual (ej: 192.168.10.20)
+    // ==========================
+// CONEXIÓN SOCKET.IO (COMPATIBLE CON RENDER)
+// ==========================
+
+// Detectar si estamos en desarrollo local o en producción
+const isDevelopment = window.location.hostname === 'localhost' || 
+                      window.location.hostname === '127.0.0.1';
+
+// Construir la URL base según el entorno
+let socketUrl;
+if (isDevelopment) {
+    socketUrl = `http://${window.location.hostname}:5000`;
+} else {
+    socketUrl = window.location.origin;
+}
+
+console.log(`Conectando a Socket.IO en: ${socketUrl}`);
+
+let socket = io(socketUrl, {
+    transports: ['websocket', 'polling'],
+    reconnection: true,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    reconnectionAttempts: 5
+});
+
+socket.on('connect', function() {
+    console.log("SocketIO conectado al servidor Flask ✓");
+    const headerTag = document.querySelector('.header-tag span:last-child');
+    if (headerTag) {
+        headerTag.textContent = "Gateway conectado · SocketIO / Flask / Supabase";
+    }
+});
+
+socket.on('new_reading', function(data) {
+    console.log("📡 Nueva lectura recibida (SocketIO):", data);
+
+    if (data.latest) {
+        updateLatestUI(data.latest);
+    }
+
+    if (data.history) {
+        updateCharts({
+            labels: data.history.labels,
+            temperature: data.history.temperature,
+            humidity: data.history.humidity,
+            soil_moisture: data.history.soil_moisture
+        });
+    }
+
+    if (data.nodes) {
+        updateNodes(data.nodes);
+    }
+
+    if (data.latest && data.nodes) {
+        generateAlerts(data.latest, data.nodes);
+    }
+
+    const lastUpdateEl = document.getElementById("last-update");
+    if (data.latest && data.latest.timestamp) {
+        const d = new Date(data.latest.timestamp);
+        lastUpdateEl.textContent =
+            "Última actualización: " +
+            d.toLocaleString("es-CO", {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit"
+            });
+    }
+});
+
+socket.on('connect_error', function(err) {
+    console.error("SocketIO error de conexión:", err);
+    const headerTag = document.querySelector('.header-tag span:last-child');
+    if (headerTag) {
+        headerTag.textContent = "Reconectando...";
+    }
+});
+
+socket.on('disconnect', function() {
+    console.warn("SocketIO desconectado ✖");
+    const headerTag = document.querySelector('.header-tag span:last-child');
+    if (headerTag) {
+        headerTag.textContent = "Desconectado - Intentando reconectar...";
+    }
+});
+
+socket.on('reconnect', function(attemptNumber) {
+    console.log(`SocketIO reconectado después de ${attemptNumber} intentos`);
+    const headerTag = document.querySelector('.header-tag span:last-child');
+    if (headerTag) {
+        headerTag.textContent = "Gateway conectado · SocketIO / Flask / Supabase";
+    }
+}); 
+
+    socket.on('connect', function() {
+        console.log("SocketIO conectado al servidor Flask ✔");
+        // Opcional: Podrías actualizar un indicador de estado en el header
+        // document.querySelector('.header-tag span:last-child').textContent = "Gateway conectado · SocketIO / Flask / SQLite";
+    });
+
+    // El servidor Python debe emitir los datos usando el evento 'new_reading'
+    socket.on('new_reading', function(data) {
+        console.log("📡 Nueva lectura recibida (SocketIO):", data);
+
+        // Actualizar panel principal
+        if (data.latest) {
+            updateLatestUI(data.latest);
+        }
+
+        // Actualizar gráficas
+        if (data.history) {
+            updateCharts({
+                labels: data.history.labels,
+                temperature: data.history.temperature,
+                humidity: data.history.humidity,
+                soil_moisture: data.history.soil_moisture
+            });
+        }
+
+        // Actualizar nodos
+        if (data.nodes) {
+            updateNodes(data.nodes);
+        }
+
+        // Actualizar alertas
+        if (data.latest && data.nodes) {
+            generateAlerts(data.latest, data.nodes);
+        }
+
+        // Actualizar indicador de última actualización
+        const lastUpdateEl = document.getElementById("last-update");
+        if (data.latest && data.latest.timestamp) {
+            const d = new Date(data.latest.timestamp);
+            lastUpdateEl.textContent =
+                "Última actualización: " +
+                d.toLocaleString("es-CO", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit"
+                });
+        }
+    });
+
+    socket.on('error', function(err) {
+        console.error("SocketIO error:", err);
+    });
+
+    socket.on('disconnect', function() {
+        console.warn("SocketIO desconectado ✖");
+    });
+  </script>
+
+  <script
+    async
+    defer
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyD6mlgZL0JT3fjtDQxq9jfJ_JIu_Fonfl4&callback=initMap">
+  </script>
+</body>
+</html>
